@@ -1,22 +1,24 @@
 #!/usr/bin/env python
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
-from time import perf_counter
-
-import sys
-from grid_map import *
-
+from torchvision.utils import make_grid
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from tqdm import tqdm
+from local_occ_grid_map import LocalMap
 
+# Init map parameters
 P_prior = 0.5	# Prior occupancy probability
-P_occ = 0.9	# Probability that cell is occupied with total confidence
+P_occ = 0.7	# Probability that cell is occupied with total confidence
 P_free = 0.3	# Probability that cell is free with total confidence 
+MAP_X_LIMIT = [0, 6.4] 
+MAP_Y_LIMIT = [-3.2, 3.2]
+RESOLUTION = 0.1 # Grid resolution in [m]'
+TRESHOLD_P_OCC = 0.8
 
-RESOLUTION = 0.075 # Grid resolution in [m]'
-
+# torch device:
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # function: get_data
 #
@@ -27,26 +29,20 @@ RESOLUTION = 0.075 # Grid resolution in [m]'
 #          labels - the correct labels for them
 #
 # this method takes in a fp and returns the data and labels
-SEED1 = 1337
 NEW_LINE = "\n"
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+POINTS = 1080
+IMG_SIZE = 64
 SEQ_LEN = 10
 class VaeTestDataset(torch.utils.data.Dataset):
     def __init__(self, img_path, file_name):
         # initialize the data and labels
-        self.length1 = 0
         # read the names of image data:
         self.scan_file_names = []
         self.pos_file_names = []
         self.vel_file_names = []
-        # read the names of image data:
-        self.img_file_names2 = []
-        self.vel_file_names2 = []
         # open train.txt or dev.txt:
         fp_scan = open(img_path+'/scans/'+file_name+'.txt', 'r')
-        fp_pos = open(img_path+'/odometry/'+file_name+'.txt', 'r')
+        fp_pos = open(img_path+'/positions/'+file_name+'.txt', 'r')
         fp_vel = open(img_path+'/velocities/'+file_name+'.txt', 'r')
         # for each line of the file:
         for line in fp_scan.read().split(NEW_LINE):
@@ -54,7 +50,7 @@ class VaeTestDataset(torch.utils.data.Dataset):
                 self.scan_file_names.append(img_path+'/scans/'+line)
         for line in fp_pos.read().split(NEW_LINE):
             if('.npy' in line): 
-                self.pos_file_names.append(img_path+'/odometry/'+line)
+                self.pos_file_names.append(img_path+'/positions/'+line)
         for line in fp_vel.read().split(NEW_LINE):
             if('.npy' in line): 
                 self.vel_file_names.append(img_path+'/velocities/'+line)
@@ -72,16 +68,16 @@ class VaeTestDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         # get the index of start point:
-        scans = np.zeros((SEQ_LEN+1, POINTS))
-        positions = np.zeros((SEQ_LEN+1, 3))
-        vels = np.zeros((SEQ_LEN+1, 2))
+        scans = np.zeros((SEQ_LEN+SEQ_LEN, POINTS))
+        positions = np.zeros((SEQ_LEN+SEQ_LEN, 3))
+        vels = np.zeros((SEQ_LEN+SEQ_LEN, 2))
         # get the index of start point:
-        if(idx+(SEQ_LEN+1) < self.length): # train1:
+        if(idx+(SEQ_LEN+SEQ_LEN) < self.length): # train1:
             idx_s = idx
         else:
-            idx_s = idx - (SEQ_LEN+1)
+            idx_s = idx - (SEQ_LEN+SEQ_LEN)
 
-        for i in range(SEQ_LEN+1):
+        for i in range(SEQ_LEN+SEQ_LEN):
             # get the scan data:
             scan_name = self.scan_file_names[idx_s+i]
             scan = np.load(scan_name)
@@ -95,64 +91,38 @@ class VaeTestDataset(torch.utils.data.Dataset):
             vel = np.load(vel_name)
             vels[i] = vel
         
-        scans[np.isnan(scans)] = 0.
-        scans[np.isinf(scans)] = 0.
+        # initialize:
+        scans[np.isnan(scans)] = 20.
+        scans[np.isinf(scans)] = 20.
         scans[scans==30] = 20.
 
         positions[np.isnan(positions)] = 0.
         positions[np.isinf(positions)] = 0.
 
-        '''
-        # Max-Min normalization:
-        scan_max = 20
-        scan_min = 0
-        scans = (scans - scan_min) / (scan_max - scan_min)
-        positions = (positions - scan_min) / (scan_max - scan_min)
-        '''
+        vels[np.isnan(vels)] = 0.
+        vels[np.isinf(vels)] = 0.
 
         # transfer to pytorch tensor:
-        scan_tensor = torch.FloatTensor(scans[:-1])
-        #scan_mask_tensor = torch.FloatTensor(scans[-1])
-        #scan_mask_tensor = scan_mask_tensor.reshape(POINTS)
-
-        pose_tensor = torch.FloatTensor(positions[:-1])
-
-        vel_tensor =  torch.FloatTensor(vels[:-1])
+        scan_tensor = torch.FloatTensor(scans)
+        pose_tensor = torch.FloatTensor(positions)
+        vel_tensor =  torch.FloatTensor(vels)
 
         data = {
                 'scan': scan_tensor,
                 'position': pose_tensor,
                 'velocity': vel_tensor, 
-                #'mask': scan_mask_tensor
                 }
 
         return data
 
-def lidar_scan_xy(distances, angles, x_odom, y_odom, theta_odom):
-	"""
-	Lidar measurements in X-Y plane
-	"""
-	distances_x = np.array([])
-	distances_y = np.array([])
-
-	for (dist, ang) in zip(distances, angles):
-		distances_x = np.append(distances_x, x_odom + dist * np.cos(ang + theta_odom))
-		distances_y = np.append(distances_y, y_odom + dist * np.sin(ang + theta_odom))
-
-	return (distances_x, distances_y)
 
 if __name__ == '__main__':
-    # Init map parameters
-    map_x_lim = [0,6] #[-10, 10]
-    map_y_lim = [-3,3]#[-10, 10]
-
     # validation set and validation data loader
     BATCH_SIZE = 1
-    pDev = "/home/xzt/vae_datasets/vae_dataset_v10/train"
-    eval_dataset = VaeTestDataset(pDev, 'train')
+    pDev = "/home/xzt/vae_datasets/vae_dataset_v10/dev"
+    eval_dataset = VaeTestDataset(pDev, 'dev')
     eval_dataloader = torch.utils.data.DataLoader(eval_dataset, batch_size=BATCH_SIZE, num_workers=2, \
-                                                 shuffle=True, drop_last=True, pin_memory=True)
-
+                                                 shuffle=False, drop_last=True, pin_memory=True)
     # for each batch in increments of batch size:
     counter = 0
     # get the number of batches (ceiling of train_data/batch_size):
@@ -161,132 +131,50 @@ if __name__ == '__main__':
         counter += 1
         # collect the samples as a batch: 10 timesteps
         scans = batch['scan']
+        scans = scans.to(device)
         positions = batch['position']
+        positions = positions.to(device)
         velocities = batch['velocity']
+        velocities = velocities.to(device)
         
-        # Create grid map 
-        gridMap = GridMap(X_lim = map_x_lim, 
-                    Y_lim = map_y_lim, 
-                    resolution = RESOLUTION, 
-                    p = P_prior)
+        # create occupancy grid maps: use 10 timesteps liar history as input, output the local occupancy grid map
+        batch_size = scans.size(0)
+        gridMap = LocalMap( X_lim = MAP_X_LIMIT, 
+                            Y_lim = MAP_Y_LIMIT, 
+                            resolution = RESOLUTION, 
+                            p = P_prior,
+                            size=[batch_size, SEQ_LEN],
+                            device = device)
+        # current position and velocities: 
+        obs_pos_N = positions[:, SEQ_LEN-1]
+        vel_N = velocities[:, SEQ_LEN-1]
+        # the original pose of the local coordinate reference frame at t+n 
+        T = 0 #int(t_pred)
+        noise_std = [0, 0, 0]#[0.00111, 0.00112, 0.02319]
+        pos_origin = gridMap.origin_pose_prediction(vel_N, obs_pos_N, T, noise_std)
+        # robot positions:
+        pos = positions[:,:SEQ_LEN]
+        # Transform the robot past poses to the predicted reference frame.
+        x_odom, y_odom, theta_odom =  gridMap.robot_coordinate_transform(pos, pos_origin)
+        # Lidar measurements:
+        distances = scans[:,:SEQ_LEN]
+        # the angles of lidar scan: -135 ~ 135 degree
+        angles = torch.linspace(-(135*np.pi/180), 135*np.pi/180, distances.shape[-1]).to(device)
+        # Lidar measurements in X-Y plane: transform to the predicted robot reference frame
+        distances_x, distances_y = gridMap.lidar_scan_xy(distances, angles, x_odom, y_odom, theta_odom)
+        # discretize to binary maps:
+        input_binary_maps = gridMap.discretize(distances_x, distances_y)
+        # occupancy map update:
+        gridMap.update(x_odom, y_odom, distances_x, distances_y, P_free, P_occ)
+        occ_grid_map = gridMap.to_prob_occ_map(TRESHOLD_P_OCC)
 
-        # refrence frame: t = 10th timestep:
-        pos_orign = positions[0, 9].detach().cpu().numpy()
-        # Main loop
-        # for BGR image of the grid map
-        #X2 = []
-        #Y2 = []
-        for t in range(SEQ_LEN):
-            scan = scans[0, t].detach().cpu().numpy()
-            pos = positions[0, t].detach().cpu().numpy()
-            vel = velocities[0, t].detach().cpu().numpy()
-
-            # Lidar measurements
-            distances = scan
-            # the angles of lidar scan: -135 ~ 135 degree
-            angles = np.linspace(-(135*np.pi/180), 135*np.pi/180, np.shape(distances)[0], endpoint = 'true')
-
-            # Odometry measurements
-            x_odom = pos[0] - pos_orign[0]
-            y_odom = pos[1] - pos_orign[1]
-            theta_odom = pos[2] - pos_orign[2]
-
-            # Lidar measurements in X-Y plane
-            distances_x, distances_y = lidar_scan_xy(distances, angles, x_odom, y_odom, theta_odom)
-
-            # x1 and y1 for Bresenham's algorithm
-            x1, y1 = gridMap.discretize(x_odom, y_odom)
-            
-            # for BGR image of the grid map
-            X2 = []
-            Y2 = []
-        
-
-            for (dist_x, dist_y, dist) in zip(distances_x, distances_y, distances):
-
-                # x2 and y2 for Bresenham's algorithm
-                x2, y2 = gridMap.discretize(dist_x, dist_y)
-
-                # draw a discrete line of free pixels, [robot position -> laser hit spot)
-                for (x_bres, y_bres) in bresenham(gridMap, x1, y1, x2, y2):
-                    valid_flag = gridMap.is_valid(x = x_bres, y = y_bres)
-                    if(valid_flag):
-                        gridMap.update(x = x_bres, y = y_bres, p = P_free)
-
-                # mark laser hit spot as ocuppied (if exists)
-                if dist < 20:
-                    valid_flag = gridMap.is_valid(x = x2, y = y2)
-                    if(valid_flag):
-                        gridMap.update(x = x2, y = y2, p = P_occ)
-
-                # for BGR image of the grid map
-                X2.append(x2)
-                Y2.append(y2)
-
-            # converting grip map to BGR image
-            bgr_image = gridMap.to_BGR_image()
-
-            # marking robot position with blue pixel value
-            set_pixel_color(bgr_image, x1, y1, 'BLUE')
-            
-            # marking neighbouring pixels with blue pixel value 
-            for (x, y) in gridMap.find_neighbours(x1, y1):
-                set_pixel_color(bgr_image, x, y, 'BLUE')
-
-            # marking laser hit spots with green value
-            for (x, y) in zip(X2,Y2):
-                set_pixel_color(bgr_image, x, y, 'GREEN')
-            
-
-            resized_image = cv2.resize(src = bgr_image, 
-                           dsize = (500, 500), 
-                           interpolation = cv2.INTER_AREA)
-
-            rotated_image = cv2.rotate(src = resized_image, 
-                           rotateCode = cv2.ROTATE_90_COUNTERCLOCKWISE)
-
-            cv2.imshow("Grid map", rotated_image)
-            img_name = "./output/b" + str(i)+ "_t" + str(t)+ ".jpg"
-            cv2.imwrite(img_name, rotated_image* 255.0)
-            cv2.waitKey(100)
-
-        '''
-        # Saving Grid Map
-        resized_image = cv2.resize(src = gridMap.to_BGR_image(), 
-                        dsize = (500, 500), 
-                        interpolation = cv2.INTER_AREA)
-
-        rotated_image = cv2.rotate(src = resized_image, 
-                        rotateCode = cv2.ROTATE_90_COUNTERCLOCKWISE)
-        
-        #flag_1 = cv2.imwrite(img = rotated_image * 255.0, 
-        #                filename = MAPS_PATH + '/' + MAP_NAME + '_grid_map_TEST.png')
-       
-        cv2.imshow("Grid map", rotated_image)
-        cv2.waitKey(1)
-        # Calculating Maximum likelihood estimate of the map
-        gridMap.calc_MLE()
-
-        # Saving MLE of the Grid Map
-        resized_image_MLE = cv2.resize(src = gridMap.to_BGR_image(), 
-                            dsize = (500, 500), 
-                            interpolation = cv2.INTER_AREA)
-
-        rotated_image_MLE = cv2.rotate(src = resized_image_MLE, 
-                            rotateCode = cv2.ROTATE_90_COUNTERCLOCKWISE)
-        cv2.imshow("Grid map", rotated_image_MLE)
-        cv2.waitKey(1)
-        
-        #flag_2 = cv2.imwrite(img = rotated_image_MLE * 255.0, 
-        #                filename = MAPS_PATH + '/' + MAP_NAME + '_grid_map_TEST_mle.png')
-        
-
-        #if flag_1 and flag_2:
-        #    print('\nGrid map successfully saved!\n')
-        
-
-        #if cv2.waitKey(0) == 27:
-        #    cv2.destroyAllWindows()
-
-        '''
-
+        # display the occupancy grid map:
+        fig = plt.figure()
+        a = fig.add_subplot(1,1,1)
+        occ_map = occ_grid_map
+        input_grid = make_grid(occ_map.detach().cpu())
+        input_image = input_grid.permute(1, 2, 0)
+        plt.imshow(input_image)
+        plt.xticks([])
+        plt.yticks([])
+        plt.show()
