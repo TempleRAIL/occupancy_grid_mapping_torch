@@ -1,4 +1,15 @@
 #!/usr/bin/env python
+#
+# file: /dataset_gmapping_node.py
+#
+# revision history: xzt
+#  20220824 (TE): first version
+#
+# usage:
+#
+# This script is a sample code to read dataset and run the GPU-accelerated and parallelized occupancy grid mapping algorithm.
+#------------------------------------------------------------------------------
+
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
@@ -119,8 +130,8 @@ class VaeTestDataset(torch.utils.data.Dataset):
 if __name__ == '__main__':
     # validation set and validation data loader
     BATCH_SIZE = 1
-    pDev = "/home/xzt/vae_datasets/vae_dataset_v10/dev"
-    eval_dataset = VaeTestDataset(pDev, 'dev')
+    pDev = "/home/xzt/OGM-datasets/OGM-Turtlebot2/val" # Change to your OGM-datasets storage directory
+    eval_dataset = VaeTestDataset(pDev, 'val')
     eval_dataloader = torch.utils.data.DataLoader(eval_dataset, batch_size=BATCH_SIZE, num_workers=2, \
                                                  shuffle=False, drop_last=True, pin_memory=True)
     # for each batch in increments of batch size:
@@ -178,3 +189,4 @@ if __name__ == '__main__':
         plt.xticks([])
         plt.yticks([])
         plt.show()
+

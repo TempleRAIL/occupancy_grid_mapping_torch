@@ -1,19 +1,21 @@
 #!/usr/bin/env python
 #
-# file: $ISIP_EXP/tuh_dpath/exp_0074/scripts/decode.py
+# file: $ISIP_EXP/SOGMP/scripts/local_occ_grid_map.py
 #
-# revision history:
-#  20190925 (TE): first version
+# revision history: xzt
+#  20220824 (TE): first version
 #
 # usage:
-#  python decode.py odir mfile data
 #
 # arguments:
-#  odir: the directory where the hypotheses will be stored
-#  mfile: input model file
-#  data: the input data list to be decoded
+#  X_lim: map limits on the x-axis
+#  Y_lim: map limits on the y-axis
+#  resolution: grid resolution in [m]'
+#  p: Prior occupancy probability
+#  size: the size of input lidar measurements: batch * time
+#  device: the device to use (GPU or CPU)
 #
-# This script decodes data using a simple MLP model.
+# This script is a GPU-accelerated and parallelized occupancy grid mapping algorithm that parallelizes the independent cell state update operations, written in pytorch.
 #------------------------------------------------------------------------------
 
 # import pytorch modules
