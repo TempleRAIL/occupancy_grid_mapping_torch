@@ -2,6 +2,7 @@
 
 ## Introduction:
 A GPU-accelerated and parallelized occupancy grid mapping algorithm that parallelizes the independent cell state update operations, written in pytorch.
+More details can be found in our paper ["Stochastic Occupancy Grid Map Prediction in Dynamic Scenes"](https://openreview.net/pdf?id=fSmkKmWM5Ry)([arXiv](https://arxiv.org/abs/2210.08577)) in 7th Annual Conference on Robot Learning (CoRL) 2023. 
 
 **Main code: dataset_gmapping_node.py**
 * Input: n timesteps lidar measurements, robot poses, velocites (calculate the required coordinate reference frame) 
@@ -34,14 +35,20 @@ python dataset_gmapping_node.py
 ## Citation
 If you find this code helpful, please cite this paper: 
 ```
-@article{xie2022stochastic,
-  title={Stochastic Occupancy Grid Map Prediction in Dynamic Scenes},
-  author={Xie, Zhanteng and Dames, Philip},
-  year={2022},
-  publisher = {{IEEE}},
-  journal={IEEE Robotics and Automation Letters},
-  note = {Under review}
+@inproceedings{
+xie2023stochastic,
+title={Stochastic Occupancy Grid Map Prediction in Dynamic Scenes},
+author={Zhanteng Xie and Philip Dames},
+booktitle={7th Annual Conference on Robot Learning},
+year={2023},
+url={https://openreview.net/forum?id=fSmkKmWM5Ry}
 }
 
+@article{xie2023stochastic,
+  title={Stochastic Occupancy Grid Map Prediction in Dynamic Scenes},
+  author={Xie, Zhanteng and Dames, Philip},
+  journal={arXiv preprint arXiv:2210.08577},
+  year={2022}
+}
 
 ```
