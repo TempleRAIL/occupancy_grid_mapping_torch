@@ -35,13 +35,13 @@ python dataset_gmapping_node.py
 ## Citation
 If you find this code helpful, please cite this paper: 
 ```
-@inproceedings{
-xie2023stochastic,
-title={Stochastic Occupancy Grid Map Prediction in Dynamic Scenes},
-author={Zhanteng Xie and Philip Dames},
-booktitle={7th Annual Conference on Robot Learning},
-year={2023},
-url={https://openreview.net/forum?id=fSmkKmWM5Ry}
+@inproceedings{xie2023stochastic,
+  title={Stochastic Occupancy Grid Map Prediction in Dynamic Scenes},
+  author={Xie, Zhanteng and Dames, Philip},
+  booktitle={Conference on Robot Learning},
+  pages={1686--1705},
+  year={2023},
+  organization={PMLR}
 }
 
 @article{xie2023stochastic,
